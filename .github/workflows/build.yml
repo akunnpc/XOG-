@@ -1,0 +1,67 @@
+name: Android CI Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Unzip Source if Uploaded as ZIP
+        run: |
+          # Detect any ZIP file in the root of the repository
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "=================================================="
+            echo "Found ZIP file: $ZIP_FILE. Extracting..."
+            echo "=================================================="
+            
+            # Create a temporary extraction directory
+            mkdir -p temp_extracted
+            unzip -o "$ZIP_FILE" -d temp_extracted
+            
+            # Check if there is a single nested folder inside the zip
+            NESTED_DIR=$(find temp_extracted -maxdepth 1 -mindepth 1 -type d | head -n 1)
+            TOTAL_ITEMS=$(find temp_extracted -maxdepth 1 -mindepth 1 | wc -l)
+            
+            if [ -n "$NESTED_DIR" ] && [ "$TOTAL_ITEMS" -eq 1 ]; then
+              echo "Detected single nested folder: $NESTED_DIR. Moving contents to root..."
+              cp -R "$NESTED_DIR"/* .
+            else
+              echo "Moving unzipped contents to root..."
+              cp -R temp_extracted/* .
+            fi
+            
+            # Clean up temporary resources
+            rm -rf temp_extracted
+            rm -f "$ZIP_FILE"
+          else
+            echo "No root ZIP file found. Building directly from repository files."
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set executable permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
